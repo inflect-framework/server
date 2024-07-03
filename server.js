@@ -1,17 +1,9 @@
 const express = require('express')
 const cors = require('cors')
-// const consumer = require('../stream-processor/consumer.js')
 const bodyParser = require('body-parser')
 const axios = require('axios')
 const processorURL = null
-// const fs = require('fs')
-// const path = require('path')
-
-// fs.readdir('./transformations', (err, files) => {
-//   files.map(file => {
-    
-//   })
-// })
+const db = require('./db')
 
 const app = express()
 app.use(cors());
@@ -37,6 +29,45 @@ app.post('/create_transformation', async (req, res) => {
   }
   // consumer(sourceTopic, targetTopic, transformation);
 });
+
+const updateActiveStateQuery = `
+UPDATE connections
+SET active_state = $1
+WHERE connections.id = $2;
+`
+
+app.put('/connection/:id', async (req, res) => {
+  const newActiveState = req.body.connectionActiveState
+  const connectionId = +req.params.id
+  try {
+    await db.query(updateActiveStateQuery, [newActiveState, connectionId])
+    res.send(200, {success: true});
+  } catch (error) {
+    res.status(500, error)
+  }
+})
+
+const getConnectionsQuery = `
+SELECT 
+    tr.transformation_name, 
+    s.source_topic, 
+    t.target_topic,
+    active_state,
+    c.id
+FROM 
+    connections c
+JOIN 
+    sources s ON c.source_id = s.id
+JOIN 
+    targets t ON c.target_id = t.id
+JOIN 
+    transformations tr ON c.transformation_id = tr.id;
+`
+
+app.get('/connections', async (req, res) => {
+  const allConnections = await db.query(getConnectionsQuery)
+  res.send(200, allConnections.rows);
+})
 
 app.listen(port, () => {
   console.log(`listening on port ${port}`)
