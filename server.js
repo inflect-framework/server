@@ -17,14 +17,31 @@ app.get('/', (req, res) => {
   res.send('public/index.html')
 });
 
+const createConnectionQuery = `
+WITH source AS (
+  SELECT id FROM sources WHERE source_topic = $1
+),
+target AS (
+  SELECT id FROM targets WHERE target_topic = $2
+),
+transformation AS (
+  SELECT id FROM transformations WHERE transformation_name = $3
+)
+INSERT INTO connections (source_id, target_id, transformation_id, active_state)
+SELECT source.id, target.id, transformation.id, true
+FROM source, target, transformation
+RETURNING id;
+`
+
 app.post('/create_transformation', async (req, res) => {
   const body = req.body
-  const [sourceTopic, targetTopic] = [body.sourceTopic, body.targetTopic];
-  const transformation = 'capitalize'
+  const { sourceTopic, targetTopic, transformation } = body
   try {
-    const request = await axios.post('http://localhost:4000/createTransformation', {sourceTopic, targetTopic, transformation})
-    res.send(200, request.body)
+    const params = [sourceTopic, targetTopic, transformation]
+    const result = await db.query(createConnectionQuery, params)
+    res.status(200).send(result.rows.at(0))
   } catch (error) {
+    console.log(error)
     res.send(500, error)
   }
   // consumer(sourceTopic, targetTopic, transformation);
