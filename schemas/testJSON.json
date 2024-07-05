@@ -1,0 +1,59 @@
+{
+  "type": "object",
+  "properties": {
+    "id": { "type": "integer" },
+    "name": { "type": "string" },
+    "email": { "type": "string" },
+    "address": {
+      "type": "object",
+      "properties": {
+        "street": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "zip": { "type": "string" }
+      },
+      "required": ["street", "city", "state", "zip"]
+    },
+    "phone_numbers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string" },
+          "number": { "type": "string" }
+        },
+        "required": ["type", "number"]
+      }
+    },
+    "birthdate": { "type": "string", "format": "date" },
+    "is_active": { "type": "boolean" }
+  },
+  "required": [
+    "id",
+    "name",
+    "email",
+    "address",
+    "phone_numbers",
+    "birthdate",
+    "is_active"
+  ],
+  "examples": [
+    {
+      "id": 1,
+      "name": "John Doe",
+      "email": "john.doe@example.com",
+      "address": {
+        "street": "123 Main St",
+        "city": "Anytown",
+        "state": "CA",
+        "zip": "12345"
+      },
+      "phone_numbers": [
+        { "type": "home", "number": "555-555-5555" },
+        { "type": "work", "number": "555-555-5556" }
+      ],
+      "birthdate": "1990-01-01",
+      "is_active": true
+    }
+  ]
+}
