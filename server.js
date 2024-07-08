@@ -1,8 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const axios = require('axios');
-const processorURL = null;
+// const axios = require('axios');
+// const processorURL = null;
 const db = require('./db');
 const generateTestEvent = require('./utils/generateTestEvent');
 
@@ -18,74 +18,121 @@ app.get('/', (req, res) => {
   res.send('public/index.html');
 });
 
-const createConnectionQuery = `
+const createPipelineQuery = `
 WITH source AS (
-  SELECT id FROM sources WHERE source_topic = $1
+  SELECT id FROM topics WHERE topic_name = $1
 ),
 target AS (
-  SELECT id FROM targets WHERE target_topic = $2
+  SELECT id FROM topics WHERE topic_name = $2
 ),
-transformation AS (
-  SELECT id FROM transformations WHERE transformation_name = $3
+incoming_schema AS (
+  SELECT id FROM schemas WHERE schema_name = $3
+),
+outgoing_schema AS (
+  SELECT id FROM schemas WHERE schema_name = $4
 )
-INSERT INTO connections (source_id, target_id, transformation_id, active_state)
-SELECT source.id, target.id, transformation.id, true
-FROM source, target, transformation
+INSERT INTO pipelines (name, source_topic_id, target_topic_id, incoming_schema_id, outgoing_schema_id, steps, is_active)
+SELECT $5, source.id, target.id, incoming_schema.id, outgoing_schema.id, $6::jsonb, true
+FROM source, target, incoming_schema, outgoing_schema
 RETURNING id;
 `;
 
-app.post('/create_transformation', async (req, res) => {
+// app.post('/create_transformation', async (req, res) => {
+//   const body = req.body;
+//   const { name, sourceTopic, targetTopic, incomingSchema, outgoingSchema, steps } = body;
+//   try {
+//     const params = [sourceTopic, targetTopic, incomingSchema, outgoingSchema, name, JSON.stringify({ processors: steps })];
+//     const result = await db.query(createPipelineQuery, params);
+//     res.status(200).send(result.rows[0]);
+//   } catch (error) {
+//     console.log(error);
+//     res.status(500).send(error);
+//   }
+// });
+
+app.post('/create_pipeline', async (req, res) => {
   const body = req.body;
-  const { sourceTopic, targetTopic, transformation } = body;
+  const { name, sourceTopic, targetTopic, incomingSchema, outgoingSchema, steps } = body;
   try {
-    const params = [sourceTopic, targetTopic, transformation];
-    const result = await db.query(createConnectionQuery, params);
-    res.status(200).send(result.rows.at(0));
+    const params = [sourceTopic, targetTopic, incomingSchema, outgoingSchema, name, JSON.stringify({ processors: steps })];
+    const result = await db.query(createPipelineQuery, params);
+    res.status(200).send(result.rows[0]);
   } catch (error) {
     console.log(error);
-    res.send(500, error);
+    res.status(500).send(error);
   }
-  // consumer(sourceTopic, targetTopic, transformation);
 });
 
 const updateActiveStateQuery = `
-UPDATE connections
-SET active_state = $1
-WHERE connections.id = $2;
+UPDATE pipelines
+SET is_active = $1
+WHERE id = $2;
 `;
 
-app.put('/connection/:id', async (req, res) => {
-  const newActiveState = req.body.connectionActiveState;
-  const connectionId = +req.params.id;
+app.put('/pipeline/:id', async (req, res) => {
+  const newActiveState = req.body.isActive;
+  const pipelineId = +req.params.id;
   try {
-    await db.query(updateActiveStateQuery, [newActiveState, connectionId]);
+    await db.query(updateActiveStateQuery, [newActiveState, pipelineId]);
     res.send(200, { success: true });
   } catch (error) {
     res.status(500, error);
   }
 });
 
-const getConnectionsQuery = `
+const getPipelinesQuery = `
 SELECT 
-    tr.transformation_name, 
-    s.source_topic, 
-    t.target_topic,
-    active_state,
-    c.id
+    p.name, 
+    st.topic_name as source_topic, 
+    tt.topic_name as target_topic,
+    is_active,
+    p.id,
+    p.steps,
+    ischema.schema_name as incoming_schema,
+    oschema.schema_name as outgoing_schema
 FROM 
-    connections c
+    pipelines p
 JOIN 
-    sources s ON c.source_id = s.id
+    topics st ON p.source_topic_id = st.id
 JOIN 
-    targets t ON c.target_id = t.id
+    topics tt ON p.target_topic_id = tt.id
 JOIN 
-    transformations tr ON c.transformation_id = tr.id;
+    schemas ischema ON p.incoming_schema_id = ischema.id
+JOIN 
+    schemas oschema ON p.outgoing_schema_id = oschema.id;
 `;
 
-app.get('/connections', async (req, res) => {
-  const allConnections = await db.query(getConnectionsQuery);
-  res.send(200, allConnections.rows);
+app.get('/pipelines', async (req, res) => {
+  try {
+    const allPipelines = await db.query(getPipelinesQuery);
+    res.send(200, allPipelines.rows);
+  } catch (error) {
+    res.status(500, error);
+  }
 });
+
+const getTopicsQuery = `
+SELECT topic_name FROM topics;
+`
+
+const getSchemasQuery = `
+SELECT schema_name FROM schemas;
+`
+
+app.get('/topics_schemas', async (req, res) => {
+  try {
+    const topics = await db.query(getTopicsQuery)
+    const schemas = await db.query(getSchemasQuery)
+    // console.log('topics', topics.rows.map(row => row.topic_name))
+    // console.log('schmeas', schemas.rows.map(row => row.schema_name))
+    const topicsArray = topics.rows.map(row => row.topic_name);
+    const schemasArray = schemas.rows.map(row => row.schema_name);
+    const result = { topics: topicsArray, schemas: schemasArray }
+    res.status(200).send(result)
+  } catch (error) {
+    res.status(500, error);
+  }
+})
 
 app.post('/test_event', async (req, res) => {
   const body = req.body;
@@ -98,6 +145,20 @@ app.post('/test_event', async (req, res) => {
     res.status(500).send(error);
   }
 });
+
+const getProcessorsQuery = `
+SELECT * from processors;
+`
+app.get('/processors', async (req, res) => {
+  try {
+    const result = await db.query(getProcessorsQuery);
+    res.status(200).send(result.rows)
+  } catch (error) {
+    console.error(error)
+    res.status(500).send(error)
+  }
+})
+
 
 app.listen(port, () => {
   console.log(`listening on port ${port}`);
