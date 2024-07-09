@@ -5,6 +5,8 @@ const bodyParser = require('body-parser');
 // const processorURL = null;
 const db = require('./db');
 const generateTestEvent = require('./utils/generateTestEvent');
+const applyProcessors = require('./utils/applyProcessors')
+const getTopicsAndSchemas = require('./utils/getTopicsAndSchemas')
 
 const app = express();
 app.use(cors());
@@ -16,6 +18,7 @@ const port = 3000;
 
 app.get('/', (req, res) => {
   res.send('public/index.html');
+  getTopicsAndSchemas()
 });
 
 const createPipelineQuery = `
@@ -106,6 +109,7 @@ app.get('/pipelines', async (req, res) => {
   try {
     const allPipelines = await db.query(getPipelinesQuery);
     res.send(200, allPipelines.rows);
+    getTopicsAndSchemas()
   } catch (error) {
     res.status(500, error);
   }
@@ -121,6 +125,7 @@ SELECT schema_name FROM schemas;
 
 app.get('/topics_schemas', async (req, res) => {
   try {
+    // getTopicsAndSchemas();
     const topics = await db.query(getTopicsQuery)
     const schemas = await db.query(getSchemasQuery)
     // console.log('topics', topics.rows.map(row => row.topic_name))
@@ -143,6 +148,43 @@ app.post('/test_event', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).send(error);
+  }
+});
+
+app.get('/test_pipeline', async (req, res) => {
+  const { format, event, steps } = req.body;
+
+  if (!event || !steps || !steps.processors) {
+    return res.status(400).send({ error: 'Invalid input. Event and steps with processors are required.' });
+  }
+
+  try {
+    const generatedEvent = await generateTestEvent(format);
+    const { transformedMessage, dlqMessage, dlqTopicName } = await applyProcessors(generatedEvent, steps.processors, steps.dlq);
+
+    if (dlqMessage) {
+      return res.send({
+        status: 'filtered',
+        step: dlqTopicName,
+        originalMessage: dlqMessage,
+      });
+    }
+
+    if (!transformedMessage) {
+      return res.send({
+        status: 'filtered',
+        step: 'unknown',
+        originalMessage: event,
+      });
+    }
+
+    res.send({
+      status: 'success',
+      transformedMessage,
+    });
+  } catch (error) {
+    console.error('Error processing event:', error);
+    res.status(500).send({ error: 'Failed to process event.' });
   }
 });
 
