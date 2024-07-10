@@ -7,6 +7,7 @@ const db = require('./db');
 const generateTestEvent = require('./utils/generateTestEvent');
 const applyProcessors = require('./utils/applyProcessors')
 const getTopicsAndSchemas = require('./utils/getTopicsAndSchemas')
+const getSchemaByName = require('./utils/getSchema')
 
 const app = express();
 app.use(cors());
@@ -54,10 +55,20 @@ RETURNING id;
 // });
 
 app.post('/create_pipeline', async (req, res) => {
+  // console.log(req + '!!!1')
+  // console.log(JSON.stringify(req.body) + '111one!')
   const body = req.body;
-  const { name, sourceTopic, targetTopic, incomingSchema, outgoingSchema, steps } = body;
+  const outgoingSchema = body.outgoingSchema.name
+  const processors = body.steps.map(obj => obj.id);
+  let dlqs = Array(body.steps.length).fill(null)
+  dlqs.push(body.outgoingSchema.redirectTopic)
+  const { name, sourceTopic, targetTopic, incomingSchema } = body;
+  
+
+  const steps = {processors: processors, dlqs: dlqs}
+
   try {
-    const params = [sourceTopic, targetTopic, incomingSchema, outgoingSchema, name, JSON.stringify({ processors: steps })];
+    const params = [sourceTopic, targetTopic, incomingSchema, outgoingSchema, name, JSON.stringify(steps)];
     const result = await db.query(createPipelineQuery, params);
     res.status(200).send(result.rows[0]);
   } catch (error) {
@@ -140,10 +151,17 @@ app.get('/topics_schemas', async (req, res) => {
 })
 
 app.post('/test_event', async (req, res) => {
-  const body = req.body;
-  const { format } = body;
+  const schema = req.body.schema
+  const format = req.body.format
+  const registrySchema = await getSchemaByName(schema)
+    // const result = await axios.post('http://localhost:3000/test_event', {
+    //   format,
+    //   schema
+    // });
+  // const body = req.body;
+  // const { format } = body;
   try {
-    const event = await generateTestEvent(format);
+    const event = await generateTestEvent(format, registrySchema);
     res.status(200).send(event);
   } catch (error) {
     console.error(error);
@@ -151,32 +169,25 @@ app.post('/test_event', async (req, res) => {
   }
 });
 
-app.get('/test_pipeline', async (req, res) => {
-  const { format, event, steps } = req.body;
+app.post('/test_pipeline', async (req, res) => {
+  const format = req.body.format
+  const steps = req.body.steps.map(obj => obj.processor_name)
+  const event = JSON.parse(req.body.event);
 
-  if (!event || !steps || !steps.processors) {
+  // // Parse the nested schema field
+  // if (event.schema && typeof event.schema === 'string') {
+  //   event.schema = JSON.parse(event.schema);
+  // }
+
+  if (!event || !steps || !format) {
     return res.status(400).send({ error: 'Invalid input. Event and steps with processors are required.' });
   }
 
   try {
-    const generatedEvent = await generateTestEvent(format);
-    const { transformedMessage, dlqMessage, dlqTopicName } = await applyProcessors(generatedEvent, steps.processors, steps.dlq);
+    // const generatedEvent = await generateTestEvent(format);
+    const transformedMessage = await applyProcessors(event, steps);
 
-    if (dlqMessage) {
-      return res.send({
-        status: 'filtered',
-        step: dlqTopicName,
-        originalMessage: dlqMessage,
-      });
-    }
 
-    if (!transformedMessage) {
-      return res.send({
-        status: 'filtered',
-        step: 'unknown',
-        originalMessage: event,
-      });
-    }
 
     res.send({
       status: 'success',

@@ -4,25 +4,25 @@ const jsf = require('json-schema-faker');
 const fs = require('fs');
 const path = require('path');
 
-const sampleAvroSchema = JSON.parse(
-  fs.readFileSync(path.resolve(__dirname, '../schemas/testAvro.avro'), 'utf8')
-);
-const sampleProtobufSchemaPath = path.resolve(
-  __dirname,
-  '../schemas/testProtobuf.proto'
-);
-const sampleJsonSchema = JSON.parse(
-  fs.readFileSync(path.resolve(__dirname, '../schemas/testJSON.json'), 'utf8')
-);
+// const sampleAvroSchema = JSON.parse(
+//   fs.readFileSync(path.resolve(__dirname, '../schemas/testAvro.avro'), 'utf8')
+// );
+// const sampleProtobufSchemaPath = path.resolve(
+//   __dirname,
+//   '../schemas/testProtobuf.proto'
+// );
+// const sampleJsonSchema = JSON.parse(
+//   fs.readFileSync(path.resolve(__dirname, '../schemas/testJSON.json'), 'utf8')
+// );
 
-function generateTestEvent(format) {
+function generateTestEvent(format, schema) {
   switch (format) {
     case 'avro':
-      return generateAvroEvent();
+      return generateAvroEvent(schema);
     case 'protobuf':
-      return generateProtobufEvent();
+      return generateProtobufEvent(schema);
     case 'json':
-      return generateJsonEvent();
+      return generateJsonEvent(schema);
     default:
       throw new Error('Invalid format');
   }
@@ -80,7 +80,7 @@ function protobufToAvroSchema(root, messageType) {
   return avroSchema;
 }
 
-async function generateProtobufEvent(schemaPath = sampleProtobufSchemaPath) {
+async function generateProtobufEvent(schemaPath) {
   const root = await protobuf.load(schemaPath);
   const messageType = root.lookupType('com.example.User'); // Adjust this to the correct path
   const avroSchema = protobufToAvroSchema(root, messageType);
@@ -88,12 +88,12 @@ async function generateProtobufEvent(schemaPath = sampleProtobufSchemaPath) {
   return avroType.random();
 }
 
-function generateAvroEvent(schema = sampleAvroSchema) {
+function generateAvroEvent(schema) {
   const avroSchema = avro.parse(schema);
   return avroSchema.random();
 }
 
-async function generateJsonEvent(schema = sampleJsonSchema) {
+async function generateJsonEvent(schema) {
   const value = await jsf.resolve(schema);
   return value;
 }
