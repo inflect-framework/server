@@ -73,9 +73,9 @@ SET is_active = $1
 WHERE id = $2;
 `;
 
-app.put("/pipeline/:id", async (req, res) => {
+app.put("/pipeline", async (req, res) => {
   const newActiveState = req.body.isActive;
-  const pipelineId = +req.params.id;
+  const pipelineId = req.body.id;
   console.log("pipelineId", pipelineId);
   console.log("newActiveState", newActiveState);
   const client = await db.getClient();
