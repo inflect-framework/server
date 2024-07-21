@@ -1,7 +1,7 @@
 const { Kafka } = require("kafkajs");
 const axios = require("axios");
 require("dotenv").config();
-const { Client } = require("pg");
+const db = require("../db");
 
 const kafka = new Kafka({
   clientId: "inflect-client",
@@ -20,35 +20,31 @@ const registryAuth = {
   password: process.env.REGISTRY_APISECRET,
 };
 
-const pgClient = new Client({
-  user: process.env.PGUSER,
-  host: process.env.PGHOST,
-  database: "inflect",
-  password: process.env.PGPASSWORD,
-  port: process.env.PGPORT,
-});
-
 const insertTopic = async (topicName) => {
+  const client = await db.getClient();
   const query = `
     INSERT INTO topics (topic_name)
     VALUES ($1)
     ON CONFLICT (topic_name) DO NOTHING;
   `;
-  await pgClient.query(query, [topicName]);
+  await client.query(query, [topicName]);
 };
 
 const insertSchema = async (schemaName) => {
+  const client = await db.getClient();
   const query = `
     INSERT INTO schemas (schema_name)
     VALUES ($1)
     ON CONFLICT (schema_name) DO NOTHING;
   `;
-  await pgClient.query(query, [schemaName]);
+  await client.query(query, [schemaName]);
 };
 
 async function getAndInsertTopicsAndSchemas() {
+  const client = await db.getClient();
+
   try {
-    await pgClient.connect();
+    await client.connect();
 
     const admin = kafka.admin();
     await admin.connect();
@@ -74,7 +70,7 @@ async function getAndInsertTopicsAndSchemas() {
   } catch (error) {
     console.error("Error listing topics and schemas:", error);
   } finally {
-    await pgClient.end();
+    client.release();
   }
 }
 
