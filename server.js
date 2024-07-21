@@ -47,7 +47,7 @@ app.post("/create_pipeline", async (req, res) => {
   const { name, sourceTopic, targetTopic, incomingSchema } = body;
 
   const steps = { processors: processors, dlqs: dlqs };
-
+  const client = await db.getClient();
   try {
     const params = [
       sourceTopic,
@@ -57,11 +57,13 @@ app.post("/create_pipeline", async (req, res) => {
       name,
       JSON.stringify(steps),
     ];
-    const result = await db.query(createPipelineQuery, params);
+    const result = await client.query(createPipelineQuery, params);
     res.status(200).send(result.rows[0]);
   } catch (error) {
     console.log(error);
     res.status(500).send(error);
+  } finally {
+    client.release();
   }
 });
 
@@ -74,11 +76,16 @@ WHERE id = $2;
 app.put("/pipeline/:id", async (req, res) => {
   const newActiveState = req.body.isActive;
   const pipelineId = +req.params.id;
+  console.log("pipelineId", pipelineId);
+  console.log("newActiveState", newActiveState);
+  const client = await db.getClient();
   try {
-    await db.query(updateActiveStateQuery, [newActiveState, pipelineId]);
+    await client.query(updateActiveStateQuery, [newActiveState, pipelineId]);
     res.status(200).send({ success: true });
   } catch (error) {
     res.status(500).send(error);
+  } finally {
+    client.release();
   }
 });
 
@@ -105,8 +112,9 @@ JOIN
 `;
 
 app.get("/pipelines", async (req, res) => {
+  const client = await db.getClient();
   try {
-    const allPipelines = await db.query(getPipelinesQuery);
+    const allPipelines = await client.query(getPipelinesQuery);
     res.status(200).send(allPipelines.rows);
     getAndInsertTopicsAndSchemas();
   } catch (error) {
@@ -116,6 +124,8 @@ app.get("/pipelines", async (req, res) => {
       error: error.message,
       stack: error.stack,
     });
+  } finally {
+    client.release();
   }
 });
 
@@ -128,15 +138,18 @@ SELECT schema_name FROM schemas;
 `;
 
 app.get("/topics_schemas", async (req, res) => {
+  const client = await db.getClient();
   try {
-    const topics = await db.query(getTopicsQuery);
-    const schemas = await db.query(getSchemasQuery);
+    const topics = await client.query(getTopicsQuery);
+    const schemas = await client.query(getSchemasQuery);
     const topicsArray = topics.rows.map((row) => row.topic_name);
     const schemasArray = schemas.rows.map((row) => row.schema_name);
     const result = { topics: topicsArray, schemas: schemasArray };
     res.status(200).send(result);
   } catch (error) {
     res.status(500, error);
+  } finally {
+    client.release();
   }
 });
 
@@ -181,12 +194,15 @@ const getProcessorsQuery = `
 SELECT * from processors;
 `;
 app.get("/processors", async (req, res) => {
+  const client = await db.getClient();
   try {
-    const result = await db.query(getProcessorsQuery);
+    const result = await client.query(getProcessorsQuery);
     res.status(200).send(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).send(error);
+  } finally {
+    client.release();
   }
 });
 

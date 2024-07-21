@@ -27,7 +27,13 @@ const insertTopic = async (topicName) => {
     VALUES ($1)
     ON CONFLICT (topic_name) DO NOTHING;
   `;
-  await client.query(query, [topicName]);
+  try {
+    await client.query(query, [topicName]);
+  } catch (error) {
+    console.error("Error inserting topic:", error);
+  } finally {
+    client.release();
+  }
 };
 
 const insertSchema = async (schemaName) => {
@@ -37,15 +43,19 @@ const insertSchema = async (schemaName) => {
     VALUES ($1)
     ON CONFLICT (schema_name) DO NOTHING;
   `;
-  await client.query(query, [schemaName]);
+  try {
+    await client.query(query, [schemaName]);
+  } catch (error) {
+    console.error("Error inserting schema:", error);
+  } finally {
+    client.release();
+  }
 };
 
 async function getAndInsertTopicsAndSchemas() {
   const client = await db.getClient();
 
   try {
-    await client.connect();
-
     const admin = kafka.admin();
     await admin.connect();
     const topics = await admin.listTopics();
