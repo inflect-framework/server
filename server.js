@@ -1,21 +1,22 @@
-const express = require("express");
-const cors = require("cors");
-const bodyParser = require("body-parser");
-const db = require("./db");
-const generateTestEvent = require("./utils/generateTestEvent");
-const applyProcessors = require("./utils/applyProcessors");
-const getAndInsertTopicsAndSchemas = require("./utils/getAndInsertTopicsAndSchemas");
-const getSchemaByName = require("./utils/getSchema");
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const db = require('./db');
+const generateTestEvent = require('./utils/generateTestEvent');
+const applyProcessors = require('./utils/applyProcessors');
+const getAndInsertTopicsAndSchemas = require('./utils/getAndInsertTopicsAndSchemas');
+const getSchemaByName = require('./utils/getSchema');
+const e = require('express');
 
 const app = express();
 app.use(cors());
-app.use(express.static("../client/public"));
+app.use(express.static('../client/public'));
 app.use(bodyParser.json());
 
 const port = process.env.SERVER_PORT || 3010;
 
-app.get("/", (req, res) => {
-  res.status(200).send("public/index.html");
+app.get('/', (req, res) => {
+  res.status(200).send('public/index.html');
   getAndInsertTopicsAndSchemas();
 });
 
@@ -38,51 +39,104 @@ FROM source, target, incoming_schema, outgoing_schema
 RETURNING id;
 `;
 
-app.post("/create_pipeline", async (req, res) => {
-  const body = req.body;
-  const outgoingSchema = body.outgoingSchema.name;
-  const processors = body.steps.map((obj) => obj.id);
-  let dlqs = Array(body.steps.length).fill(null);
-  dlqs.push(body.outgoingSchema.redirectTopic);
-  const { name, sourceTopic, targetTopic, incomingSchema } = body;
+app.post('/create_pipeline', async (req, res) => {
+  // const body = req.body;
+  // const outgoingSchema = body.outgoingSchema;
+  const processors = req.body.steps.processors;
+  const dlqs = req.body.steps.dlqs || [];
+  // dlqs.push(body.outgoingSchema.redirectTopic);
+  const { 
+    name, 
+    source_topic, 
+    target_topic, 
+    incoming_schema, 
+    outgoing_schema 
+  } = req.body;
 
   const steps = { processors: processors, dlqs: dlqs };
   const client = await db.getClient();
   try {
     const params = [
-      sourceTopic,
-      targetTopic,
-      incomingSchema,
-      outgoingSchema,
+      source_topic,
+      target_topic,
+      incoming_schema,
+      outgoing_schema,
       name,
       JSON.stringify(steps),
     ];
     const result = await client.query(createPipelineQuery, params);
     res.status(200).send(result.rows[0]);
   } catch (error) {
-    console.log(error);
+    console.error(error);
     res.status(500).send(error);
   } finally {
     client.release();
   }
 });
 
-const updateActiveStateQuery = `
+const updatePipelinesQuery = `
+WITH source AS (
+  SELECT id FROM topics WHERE topic_name = $1
+),
+target AS (
+  SELECT id FROM topics WHERE topic_name = $2
+),
+incoming_schema AS (
+  SELECT id FROM schemas WHERE schema_name = $3
+),
+outgoing_schema AS (
+  SELECT id FROM schemas WHERE schema_name = $4
+)
 UPDATE pipelines
-SET is_active = $1
-WHERE id = $2;
+SET 
+  name = $5, 
+  source_topic_id = source.id, 
+  target_topic_id = target.id, 
+  incoming_schema_id = incoming_schema.id, 
+  outgoing_schema_id = outgoing_schema.id, 
+  steps = $6::jsonb, 
+  is_active = $7
+FROM 
+  source, target, incoming_schema, outgoing_schema
+WHERE 
+  pipelines.id = $8;
 `;
 
-app.put("/pipeline", async (req, res) => {
-  const newActiveState = req.body.isActive;
+app.put('/pipeline', async (req, res) => {
   const pipelineId = req.body.id;
-  console.log("pipelineId", pipelineId);
-  console.log("newActiveState", newActiveState);
+  const pipelineName = req.body.name;
+  const sourceTopicName = req.body.source_topic;
+  const targetTopicName = req.body.target_topic;
+  const incomingSchema = req.body.incoming_schema;
+  const outgoingSchema = req.body.outgoing_schema;
+  const newActiveState = req.body.is_active;
+  const steps = req.body.steps;
+  const redirectTopic = req.body.redirect_topic;
+
+  if (!steps.hasOwnProperty('dlqs')) {
+    steps.dlqs = Array.from({ length: steps.processors.length + 1 }).fill(null);
+    steps.dlqs.at(-1) = redirectTopic;
+  } else if (steps.dlqs.length !== steps.processors.length + 1) {
+    steps.dlqs = [...steps.dlqs].concat(redirectTopic)
+  } else if (steps.dlqs[steps.dlqs.length - 1] !== redirectTopic) {
+    steps.dlqs[steps.dlqs.length - 1] = redirectTopic;
+  }
+
   const client = await db.getClient();
   try {
-    await client.query(updateActiveStateQuery, [newActiveState, pipelineId]);
+    await client.query(updatePipelinesQuery, [
+      sourceTopicName,
+      targetTopicName,
+      incomingSchema,
+      outgoingSchema,
+      pipelineName,
+      steps,
+      newActiveState,
+      pipelineId,
+    ]);
     res.status(200).send({ success: true });
   } catch (error) {
+    console.error('Error updating pipeline:', error);
     res.status(500).send(error);
   } finally {
     client.release();
@@ -111,16 +165,16 @@ JOIN
     schemas oschema ON p.outgoing_schema_id = oschema.id;
 `;
 
-app.get("/pipelines", async (req, res) => {
+app.get('/pipelines', async (req, res) => {
   const client = await db.getClient();
   try {
     const allPipelines = await client.query(getPipelinesQuery);
     res.status(200).send(allPipelines.rows);
     getAndInsertTopicsAndSchemas();
   } catch (error) {
-    console.error("Error getting pipelines:", error);
+    console.error('Error getting pipelines:', error);
     res.status(500).send({
-      message: "Failed to get pipelines",
+      message: 'Failed to get pipelines',
       error: error.message,
       stack: error.stack,
     });
@@ -137,7 +191,7 @@ const getSchemasQuery = `
 SELECT schema_name FROM schemas;
 `;
 
-app.get("/topics_schemas", async (req, res) => {
+app.get('/topics_schemas', async (req, res) => {
   const client = await db.getClient();
   try {
     const topics = await client.query(getTopicsQuery);
@@ -153,12 +207,14 @@ app.get("/topics_schemas", async (req, res) => {
   }
 });
 
-app.post("/test_event", async (req, res) => {
+app.post('/test_event', async (req, res) => {
   const schema = req.body.schema;
   const format = req.body.format;
   const registrySchema = await getSchemaByName(schema);
+  const protoName = registrySchema.hasOwnProperty('syntax') ? registrySchema.root : null;
   try {
-    const event = await generateTestEvent(format, registrySchema);
+    if (registrySchema === undefined) throw new Error('Schema not returned from registry');
+    const event = await generateTestEvent(format, registrySchema, protoName);
     res.status(200).send(event);
   } catch (error) {
     console.error(error);
@@ -166,34 +222,33 @@ app.post("/test_event", async (req, res) => {
   }
 });
 
-app.post("/test_pipeline", async (req, res) => {
-  const format = req.body.format;
-  const steps = req.body.steps.map((obj) => obj.processor_name);
+app.post('/test_pipeline', async (req, res) => {
+  const { format, steps, dlqs } = req.body;
   const event = JSON.parse(req.body.event);
 
-  if (!event || !steps || !format) {
+  if (!event || !steps || !format || !dlqs) {
     return res.status(400).send({
-      error: "Invalid input. Event and steps with processors are required.",
+      error: 'Invalid input. Event and steps with processors are required.',
     });
   }
 
   try {
-    const transformedMessage = await applyProcessors(event, steps);
+    const transformedMessage = await applyProcessors(event, steps, dlqs);
 
     res.status(200).send({
-      status: "success",
+      status: 'success',
       transformedMessage,
     });
   } catch (error) {
-    console.error("Error processing event:", error);
-    res.status(500).send({ error: "Failed to process event." });
+    console.error('Error processing event:', error);
+    res.status(500).send({ error: 'Failed to process event.' });
   }
 });
 
 const getProcessorsQuery = `
 SELECT * from processors;
 `;
-app.get("/processors", async (req, res) => {
+app.get('/processors', async (req, res) => {
   const client = await db.getClient();
   try {
     const result = await client.query(getProcessorsQuery);

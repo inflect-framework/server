@@ -1,4 +1,4 @@
-const db = require("../db");
+const db = require('../db');
 
 // const getProcessorName = async (processorId) => {
 //   const result = await db.query('SELECT processor_name FROM processors WHERE id = $1', [processorId]);
@@ -11,7 +11,9 @@ const db = require("../db");
 const applyProcessors = async (message, steps, dlqSteps) => {
   let transformedMessage = { ...message };
   console.log(message);
-  console.log(JSON.stringify(transformedMessage) + "$$$$$$");
+  console.log(JSON.stringify(transformedMessage) + '$$$$$$');
+  console.log('apply processors steps:', steps);
+  console.log('dlqsteps:', dlqSteps);
 
   for (let i = 0; i < steps.length; i++) {
     // const processorName = await getProcessorName(steps[i]);
@@ -20,7 +22,7 @@ const applyProcessors = async (message, steps, dlqSteps) => {
 
     try {
       transformedMessage = transformation(transformedMessage);
-      console.log("Ran process " + processorName);
+      console.log('Ran process ' + processorName);
       console.log(transformedMessage);
 
       // if (!transformedMessage) {
