@@ -1,4 +1,4 @@
-const db = require('../db');
+const db = require("../db");
 
 // const getProcessorName = async (processorId) => {
 //   const result = await db.query('SELECT processor_name FROM processors WHERE id = $1', [processorId]);
@@ -10,17 +10,17 @@ const db = require('../db');
 
 const applyProcessors = async (message, steps, dlqSteps) => {
   let transformedMessage = { ...message };
-  console.log(message)
-  console.log(JSON.stringify(transformedMessage) + '$$$$$$')
+  console.log(message);
+  console.log(JSON.stringify(transformedMessage) + "$$$$$$");
 
   for (let i = 0; i < steps.length; i++) {
     // const processorName = await getProcessorName(steps[i]);
-    processorName = steps[i]
-    const transformation = require(`../../stream-processor/transformations/${processorName}`);
-    
+    processorName = steps[i];
+    const transformation = require(`../../stream-processor/src/transformations/${processorName}`);
+
     try {
       transformedMessage = transformation(transformedMessage);
-      console.log('Ran process ' + processorName);
+      console.log("Ran process " + processorName);
       console.log(transformedMessage);
 
       // if (!transformedMessage) {
@@ -33,11 +33,15 @@ const applyProcessors = async (message, steps, dlqSteps) => {
       // }
     } catch (error) {
       console.error(`Error applying transformation ${processorName}:`, error);
-      return { transformedMessage: null, filteredAt: processorName, error: error.message };
+      return {
+        transformedMessage: null,
+        filteredAt: processorName,
+        error: error.message,
+      };
     }
   }
 
   return transformedMessage;
 };
 
-module.exports = applyProcessors
+module.exports = applyProcessors;

@@ -1,25 +1,22 @@
-const express = require('express');
-const cors = require('cors');
-const bodyParser = require('body-parser');
-// const axios = require('axios');
-// const processorURL = null;
-const db = require('./db');
-const generateTestEvent = require('./utils/generateTestEvent');
-const applyProcessors = require('./utils/applyProcessors')
-const getTopicsAndSchemas = require('./utils/getTopicsAndSchemas')
-const getSchemaByName = require('./utils/getSchema')
+const express = require("express");
+const cors = require("cors");
+const bodyParser = require("body-parser");
+const db = require("./db");
+const generateTestEvent = require("./utils/generateTestEvent");
+const applyProcessors = require("./utils/applyProcessors");
+const getAndInsertTopicsAndSchemas = require("./utils/getAndInsertTopicsAndSchemas");
+const getSchemaByName = require("./utils/getSchema");
 
 const app = express();
 app.use(cors());
-app.use(express.static('../client/public'));
-// app.use(express.json())
+app.use(express.static("../client/public"));
 app.use(bodyParser.json());
 
-const port = 3000;
+const port = process.env.SERVER_PORT || 3010;
 
-app.get('/', (req, res) => {
-  res.send('public/index.html');
-  getTopicsAndSchemas()
+app.get("/", (req, res) => {
+  res.status(200).send("public/index.html");
+  getAndInsertTopicsAndSchemas();
 });
 
 const createPipelineQuery = `
@@ -41,39 +38,32 @@ FROM source, target, incoming_schema, outgoing_schema
 RETURNING id;
 `;
 
-// app.post('/create_transformation', async (req, res) => {
-//   const body = req.body;
-//   const { name, sourceTopic, targetTopic, incomingSchema, outgoingSchema, steps } = body;
-//   try {
-//     const params = [sourceTopic, targetTopic, incomingSchema, outgoingSchema, name, JSON.stringify({ processors: steps })];
-//     const result = await db.query(createPipelineQuery, params);
-//     res.status(200).send(result.rows[0]);
-//   } catch (error) {
-//     console.log(error);
-//     res.status(500).send(error);
-//   }
-// });
-
-app.post('/create_pipeline', async (req, res) => {
-  // console.log(req + '!!!1')
-  // console.log(JSON.stringify(req.body) + '111one!')
+app.post("/create_pipeline", async (req, res) => {
   const body = req.body;
-  const outgoingSchema = body.outgoingSchema.name
-  const processors = body.steps.map(obj => obj.id);
-  let dlqs = Array(body.steps.length).fill(null)
-  dlqs.push(body.outgoingSchema.redirectTopic)
+  const outgoingSchema = body.outgoingSchema.name;
+  const processors = body.steps.map((obj) => obj.id);
+  let dlqs = Array(body.steps.length).fill(null);
+  dlqs.push(body.outgoingSchema.redirectTopic);
   const { name, sourceTopic, targetTopic, incomingSchema } = body;
-  
 
-  const steps = {processors: processors, dlqs: dlqs}
-
+  const steps = { processors: processors, dlqs: dlqs };
+  const client = await db.getClient();
   try {
-    const params = [sourceTopic, targetTopic, incomingSchema, outgoingSchema, name, JSON.stringify(steps)];
-    const result = await db.query(createPipelineQuery, params);
+    const params = [
+      sourceTopic,
+      targetTopic,
+      incomingSchema,
+      outgoingSchema,
+      name,
+      JSON.stringify(steps),
+    ];
+    const result = await client.query(createPipelineQuery, params);
     res.status(200).send(result.rows[0]);
   } catch (error) {
     console.log(error);
     res.status(500).send(error);
+  } finally {
+    client.release();
   }
 });
 
@@ -83,14 +73,19 @@ SET is_active = $1
 WHERE id = $2;
 `;
 
-app.put('/pipeline/:id', async (req, res) => {
+app.put("/pipeline", async (req, res) => {
   const newActiveState = req.body.isActive;
-  const pipelineId = +req.params.id;
+  const pipelineId = req.body.id;
+  console.log("pipelineId", pipelineId);
+  console.log("newActiveState", newActiveState);
+  const client = await db.getClient();
   try {
-    await db.query(updateActiveStateQuery, [newActiveState, pipelineId]);
-    res.send(200, { success: true });
+    await client.query(updateActiveStateQuery, [newActiveState, pipelineId]);
+    res.status(200).send({ success: true });
   } catch (error) {
-    res.status(500, error);
+    res.status(500).send(error);
+  } finally {
+    client.release();
   }
 });
 
@@ -116,50 +111,52 @@ JOIN
     schemas oschema ON p.outgoing_schema_id = oschema.id;
 `;
 
-app.get('/pipelines', async (req, res) => {
+app.get("/pipelines", async (req, res) => {
+  const client = await db.getClient();
   try {
-    const allPipelines = await db.query(getPipelinesQuery);
-    res.send(200, allPipelines.rows);
-    getTopicsAndSchemas()
+    const allPipelines = await client.query(getPipelinesQuery);
+    res.status(200).send(allPipelines.rows);
+    getAndInsertTopicsAndSchemas();
   } catch (error) {
-    res.status(500, error);
+    console.error("Error getting pipelines:", error);
+    res.status(500).send({
+      message: "Failed to get pipelines",
+      error: error.message,
+      stack: error.stack,
+    });
+  } finally {
+    client.release();
   }
 });
 
 const getTopicsQuery = `
 SELECT topic_name FROM topics;
-`
+`;
 
 const getSchemasQuery = `
 SELECT schema_name FROM schemas;
-`
+`;
 
-app.get('/topics_schemas', async (req, res) => {
+app.get("/topics_schemas", async (req, res) => {
+  const client = await db.getClient();
   try {
-    // getTopicsAndSchemas();
-    const topics = await db.query(getTopicsQuery)
-    const schemas = await db.query(getSchemasQuery)
-    // console.log('topics', topics.rows.map(row => row.topic_name))
-    // console.log('schmeas', schemas.rows.map(row => row.schema_name))
-    const topicsArray = topics.rows.map(row => row.topic_name);
-    const schemasArray = schemas.rows.map(row => row.schema_name);
-    const result = { topics: topicsArray, schemas: schemasArray }
-    res.status(200).send(result)
+    const topics = await client.query(getTopicsQuery);
+    const schemas = await client.query(getSchemasQuery);
+    const topicsArray = topics.rows.map((row) => row.topic_name);
+    const schemasArray = schemas.rows.map((row) => row.schema_name);
+    const result = { topics: topicsArray, schemas: schemasArray };
+    res.status(200).send(result);
   } catch (error) {
     res.status(500, error);
+  } finally {
+    client.release();
   }
-})
+});
 
-app.post('/test_event', async (req, res) => {
-  const schema = req.body.schema
-  const format = req.body.format
-  const registrySchema = await getSchemaByName(schema)
-    // const result = await axios.post('http://localhost:3000/test_event', {
-    //   format,
-    //   schema
-    // });
-  // const body = req.body;
-  // const { format } = body;
+app.post("/test_event", async (req, res) => {
+  const schema = req.body.schema;
+  const format = req.body.format;
+  const registrySchema = await getSchemaByName(schema);
   try {
     const event = await generateTestEvent(format, registrySchema);
     res.status(200).send(event);
@@ -169,49 +166,45 @@ app.post('/test_event', async (req, res) => {
   }
 });
 
-app.post('/test_pipeline', async (req, res) => {
-  const format = req.body.format
-  const steps = req.body.steps.map(obj => obj.processor_name)
+app.post("/test_pipeline", async (req, res) => {
+  const format = req.body.format;
+  const steps = req.body.steps.map((obj) => obj.processor_name);
   const event = JSON.parse(req.body.event);
 
-  // // Parse the nested schema field
-  // if (event.schema && typeof event.schema === 'string') {
-  //   event.schema = JSON.parse(event.schema);
-  // }
-
   if (!event || !steps || !format) {
-    return res.status(400).send({ error: 'Invalid input. Event and steps with processors are required.' });
+    return res.status(400).send({
+      error: "Invalid input. Event and steps with processors are required.",
+    });
   }
 
   try {
-    // const generatedEvent = await generateTestEvent(format);
     const transformedMessage = await applyProcessors(event, steps);
 
-
-
-    res.send({
-      status: 'success',
+    res.status(200).send({
+      status: "success",
       transformedMessage,
     });
   } catch (error) {
-    console.error('Error processing event:', error);
-    res.status(500).send({ error: 'Failed to process event.' });
+    console.error("Error processing event:", error);
+    res.status(500).send({ error: "Failed to process event." });
   }
 });
 
 const getProcessorsQuery = `
 SELECT * from processors;
-`
-app.get('/processors', async (req, res) => {
+`;
+app.get("/processors", async (req, res) => {
+  const client = await db.getClient();
   try {
-    const result = await db.query(getProcessorsQuery);
-    res.status(200).send(result.rows)
+    const result = await client.query(getProcessorsQuery);
+    res.status(200).send(result.rows);
   } catch (error) {
-    console.error(error)
-    res.status(500).send(error)
+    console.error(error);
+    res.status(500).send(error);
+  } finally {
+    client.release();
   }
-})
-
+});
 
 app.listen(port, () => {
   console.log(`listening on port ${port}`);

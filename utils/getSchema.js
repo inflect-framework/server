@@ -1,5 +1,5 @@
-const axios = require('axios');
-require('dotenv').config();
+const axios = require("axios");
+require("dotenv").config();
 
 const registryUrl = process.env.REGISTRY_URL;
 const registryAuth = {
@@ -9,14 +9,17 @@ const registryAuth = {
 
 async function getSchemaByName(schemaName) {
   try {
-    const subjectsResponse = await axios.get(`${registryUrl}/subjects/${schemaName}/versions/latest`, {
-      auth: registryAuth
-    });
+    const subjectsResponse = await axios.get(
+      `${registryUrl}/subjects/${schemaName}/versions/latest`,
+      {
+        auth: registryAuth,
+      }
+    );
 
-    return JSON.parse(subjectsResponse.data.schema).properties
+    return JSON.parse(subjectsResponse.data.schema).properties;
   } catch (error) {
-    console.error('Error getting schema', error);
+    console.error("Error getting schema", error);
   }
 }
 
-module.exports = getSchemaByName
+module.exports = getSchemaByName;

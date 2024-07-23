@@ -1,8 +1,8 @@
-const avro = require('avro-js');
-const protobuf = require('protobufjs');
-const jsf = require('json-schema-faker');
-const fs = require('fs');
-const path = require('path');
+const avro = require("avro-js");
+const protobuf = require("protobufjs");
+const jsf = require("json-schema-faker");
+const fs = require("fs");
+const path = require("path");
 
 // const sampleAvroSchema = JSON.parse(
 //   fs.readFileSync(path.resolve(__dirname, '../schemas/testAvro.avro'), 'utf8')
@@ -17,20 +17,20 @@ const path = require('path');
 
 function generateTestEvent(format, schema) {
   switch (format) {
-    case 'avro':
+    case "avro":
       return generateAvroEvent(schema);
-    case 'protobuf':
+    case "protobuf":
       return generateProtobufEvent(schema);
-    case 'json':
+    case "json":
       return generateJsonEvent(schema);
     default:
-      throw new Error('Invalid format');
+      throw new Error("Invalid format");
   }
 }
 
 function protobufToAvroSchema(root, messageType) {
   const avroSchema = {
-    type: 'record',
+    type: "record",
     name: messageType.name,
     fields: [],
   };
@@ -39,39 +39,39 @@ function protobufToAvroSchema(root, messageType) {
     let fieldType;
 
     switch (field.type) {
-      case 'int32':
-      case 'int64':
-      case 'uint32':
-      case 'uint64':
-        fieldType = 'int';
+      case "int32":
+      case "int64":
+      case "uint32":
+      case "uint64":
+        fieldType = "int";
         break;
-      case 'float':
-      case 'double':
-        fieldType = 'double';
+      case "float":
+      case "double":
+        fieldType = "double";
         break;
-      case 'string':
-        fieldType = 'string';
+      case "string":
+        fieldType = "string";
         break;
-      case 'bool':
-        fieldType = 'boolean';
+      case "bool":
+        fieldType = "boolean";
         break;
-      case 'enum':
+      case "enum":
         fieldType = {
-          type: 'enum',
+          type: "enum",
           symbols: Object.values(field.resolvedType.values),
         };
         break;
-      case 'message':
+      case "message":
         fieldType = protobufToAvroSchema(root, field.resolvedType);
         break;
-      case 'repeated':
+      case "repeated":
         fieldType = {
-          type: 'array',
+          type: "array",
           items: protobufToAvroSchema(root, field.resolvedType),
         };
         break;
       default:
-        fieldType = 'null';
+        fieldType = "null";
     }
 
     avroSchema.fields.push({ name: field.name, type: fieldType });
@@ -82,7 +82,7 @@ function protobufToAvroSchema(root, messageType) {
 
 async function generateProtobufEvent(schemaPath) {
   const root = await protobuf.load(schemaPath);
-  const messageType = root.lookupType('com.example.User'); // Adjust this to the correct path
+  const messageType = root.lookupType("com.example.User"); // Adjust this to the correct path
   const avroSchema = protobufToAvroSchema(root, messageType);
   const avroType = avro.parse(avroSchema);
   return avroType.random();
