@@ -114,10 +114,10 @@ app.put('/pipeline', async (req, res) => {
   const redirectTopic = req.body.redirect_topic;
 
   if (!steps.hasOwnProperty('dlqs')) {
-    steps.dlqs = Array.from({ length: steps.processors.length + 1 }).fill(null);
-    steps.dlqs.at(-1) = redirectTopic;
+    steps.dlqs = Array(steps.processors.length + 1).fill(null);
+    steps.dlqs[steps.dlqs.length - 1] = redirectTopic;
   } else if (steps.dlqs.length !== steps.processors.length + 1) {
-    steps.dlqs = [...steps.dlqs].concat(redirectTopic)
+    steps.dlqs = [...steps.dlqs, redirectTopic];
   } else if (steps.dlqs[steps.dlqs.length - 1] !== redirectTopic) {
     steps.dlqs[steps.dlqs.length - 1] = redirectTopic;
   }
