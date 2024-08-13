@@ -233,15 +233,16 @@ app.post('/test_pipeline', async (req, res) => {
   }
 
   try {
-    const transformedMessage = await applyProcessors(event, steps, dlqs);
+    const result = await applyProcessors(event, steps, dlqs);
 
     res.status(200).send({
       status: 'success',
-      transformedMessage,
+      transformedMessage: result.transformedMessage,
+      processingSteps: result.processingSteps,
     });
   } catch (error) {
     console.error('Error processing event:', error);
-    res.status(500).send({ error: 'Failed to process event.' });
+    res.status(500).send({ error: 'Failed to process event.', details: error.message });
   }
 });
 

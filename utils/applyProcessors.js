@@ -1,49 +1,51 @@
-const db = require('../db');
-
-// const getProcessorName = async (processorId) => {
-//   const result = await db.query('SELECT processor_name FROM processors WHERE id = $1', [processorId]);
-//   if (result.rowCount === 0) {
-//     throw new Error(`Processor with id ${processorId} not found`);
-//   }
-//   return result.rows[0].processor_name;
-// };
-
 const applyProcessors = async (message, steps, dlqSteps) => {
   let transformedMessage = { ...message };
-  console.log(message);
-  console.log(JSON.stringify(transformedMessage) + '$$$$$$');
-  console.log('apply processors steps:', steps);
-  console.log('dlqsteps:', dlqSteps);
+  let processingSteps = [];
 
   for (let i = 0; i < steps.length; i++) {
-    // const processorName = await getProcessorName(steps[i]);
-    processorName = steps[i];
+    const processorName = steps[i];
     const transformation = require(`../../stream-processor/src/transformations/${processorName}`);
 
     try {
+      const prevMessage = JSON.parse(JSON.stringify(transformedMessage));
       transformedMessage = transformation(transformedMessage);
-      console.log('Ran process ' + processorName);
-      console.log(transformedMessage);
+      
+      processingSteps.push({
+        name: processorName,
+        status: 'success',
+        input: prevMessage,
+        output: transformedMessage
+      });
 
-      // if (!transformedMessage) {
-      //   if (dlqSteps && dlqSteps[i]) {
-      //     const dlqTopicName = await getDlqTopicName(dlqSteps[i]);
-      //     return { dlqMessage: message, dlqTopicName };
-      //   } else {
-      //     return { transformedMessage: null, filteredAt: processorName };
-      //   }
-      // }
+      if (!transformedMessage) {
+        if (dlqSteps && dlqSteps[i]) {
+          return { 
+            transformedMessage: null, 
+            processingSteps,
+            filteredAt: processorName,
+            dlqTopic: dlqSteps[i]
+          };
+        } else {
+          return { transformedMessage: null, processingSteps, filteredAt: processorName };
+        }
+      }
     } catch (error) {
       console.error(`Error applying transformation ${processorName}:`, error);
+      processingSteps.push({
+        name: processorName,
+        status: 'error',
+        error: error.message
+      });
       return {
         transformedMessage: null,
+        processingSteps,
         filteredAt: processorName,
         error: error.message,
       };
     }
   }
 
-  return transformedMessage;
+  return { transformedMessage, processingSteps };
 };
 
 module.exports = applyProcessors;
