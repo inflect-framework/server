@@ -4,7 +4,16 @@ const applyProcessors = async (message, steps, dlqSteps) => {
 
   for (let i = 0; i < steps.length; i++) {
     const processorName = steps[i];
-    const transformation = require(`../../stream-processor/src/transformations/${processorName}`);
+    let transformation;
+    try {
+      transformation = require(`../../stream-processor/src/transformations/${processorName}`);
+    } catch (error) {
+      if (error.code === 'MODULE_NOT_FOUND') {
+        transformation = require(`../../stream-processor/src/filters/${processorName}`);
+      } else {
+        throw error;
+      }
+    }
 
     try {
       const prevMessage = JSON.parse(JSON.stringify(transformedMessage));

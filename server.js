@@ -223,22 +223,30 @@ app.post('/test_event', async (req, res) => {
 });
 
 app.post('/test_pipeline', async (req, res) => {
-  const { format, steps, dlqs } = req.body;
-  const event = JSON.parse(req.body.event);
+  console.log('Received test pipeline request:', req.body);
 
-  if (!event || !steps || !format || !dlqs) {
+  const { event, steps, dlqs } = req.body;
+
+  if (!event || !steps || !dlqs) {
+    console.log('Invalid input. Missing:', {
+      event: !event,
+      steps: !steps,
+      dlqs: !dlqs,
+    });
     return res.status(400).send({
-      error: 'Invalid input. Event and steps with processors are required.',
+      error: 'Invalid input. Event, steps, and DLQs are required.',
     });
   }
 
   try {
-    const result = await applyProcessors(event, steps, dlqs);
+    const parsedEvent = typeof event === 'string' ? JSON.parse(event) : event;
+    const result = await applyProcessors(parsedEvent, steps, dlqs);
 
     res.status(200).send({
       status: 'success',
       transformedMessage: result.transformedMessage,
       processingSteps: result.processingSteps,
+      filteredAt: result.filteredAt,
     });
   } catch (error) {
     console.error('Error processing event:', error);

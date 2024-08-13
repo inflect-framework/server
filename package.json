@@ -11,6 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "ajv": "^8.17.1",
     "avro-js": "^1.11.3",
     "axios": "^1.7.2",
     "body-parser": "^1.20.2",
